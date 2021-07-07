@@ -1,0 +1,142 @@
+"""
+NAME: Example Component Release Pipeline
+DESCRIPTION:
+- Used by devops to deploy the specified application and version. Uses bash shell.
+
+REQUIRES:
+- Standard Suggested Jenkins plugins
+- Pipeline Utility Steps
+
+"""
+def logSeparator = "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+
+def abort(String message)
+{
+    echo "Aborting pipeline..."
+    currentBuild.result = 'ABORTED'
+    error(message)
+}
+
+def log(String message)
+{
+    echo "++++++++++++++++++++++++++ [ ${message} ]"
+}
+
+def deployCloudHub(String groupId, String artifactId, String version, String targetEnvironment, String dlb, String workers, String workerSize, String usr, String pwd, String settingsFile) {
+    sh "${MVN} mule:deploy -Dmule.artifact=" + artifactId + "-" + version + "-mule-application.jar -Pcloudhub -Denv=" + targetEnvironment + " -P" + dlb + " -Dch.workers=" + workers + " -Dch.workerType=" + workerSize + " -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
+}
+
+def deployRTF(String groupId, String artifactId, String version, String targetEnvironment, String workers, String workerSize, String usr, String pwd, String settingsFile) {
+  def cpuReserved = '.5'
+  def cpuLimit = '1' 
+    if (workerSize.equalsIgnoreCase("MICRO")) {
+      cpuReserved = '.1'
+      cpuLimit = '1'
+    } else if (workerSize.equalsIgnoreCase("SMALL")) {
+      cpuReserved = '.2'
+      cpuLimit = '1'
+    } else if (workerSize.equalsIgnoreCase("MEDIUM")) {
+      cpuReserved = '1'
+      cpuLimit = '1'
+    } else if (workerSize.equalsIgnoreCase("LARGE")) {
+      cpuReserved = '2'
+      cpuLimit = '2'
+    } else if (workerSize.equalsIgnoreCase("XLARGE")) {
+      cpuReserved = '4'
+      cpuLimit = '4'
+    } else if (workerSize.equalsIgnoreCase("XXLARGE")) {
+      cpuReserved = '8'
+      cpuLimit = '8'
+    } else if (workerSize.equalsIgnoreCase("4XLARGE")) {
+      cpuReserved = '16'
+      cpuLimit = '16'
+    } else {
+      error('Unknown worker size: ' + workerSize)
+    }
+    sh "${MVN} mule:deploy -Dmule.artifact=" + artifactId + "-" + version + "-mule-application.jar -Prtf -Denv=" + targetEnvironment + " -Drtf.cpuReserved=" + cpuReserved + " -Drtf.cpuLimit=" + cpuLimit + " -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
+}
+
+def deployStandalone(String groupId, String artifactId, String version, String targetEnvironment, String usr, String pwd, String settingsFile) {
+    sh "${MVN} mule:deploy -Dmule.artifact=" + artifactId + "-" + version + "-mule-application.jar -Phybrid -Denv=" + targetEnvironment + " -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
+}
+
+def deploy(String groupId, String artifactId, String version, String targetEnvironment, deploymentModel, String workers, String workerSize, String usr, String pwd, String settingsFile) {
+
+	sh "${MVN} dependency:copy -Dartifact=" + groupId + ":" + artifactId + ":" + version + ":pom -DoutputDirectory=./ -B -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
+	sh "${RENAME} " + artifactId + "-" + version + ".pom pom.xml"
+	
+	if (deploymentModel.equalsIgnoreCase("CloudHub public-lb")) {
+ 	    sh "${MVN} dependency:copy -Dartifact=" + groupId + ":" + artifactId + ":" + version + ":jar:mule-application -DoutputDirectory=./ -B -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
+        deployCloudHub( groupId,  artifactId,  version,  targetEnvironment,  'public-lb', workers, workerSize,  usr,  pwd,  settingsFile)
+    } else if (deploymentModel.equalsIgnoreCase("CloudHub dlb")) {
+ 	    sh "${MVN} dependency:copy -Dartifact=" + groupId + ":" + artifactId + ":" + version + ":jar:mule-application -DoutputDirectory=./ -B -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
+        deployCloudHub( groupId,  artifactId,  version,  targetEnvironment,  'dlb', workers, workerSize,  usr,  pwd,  settingsFile)
+    } else if (deploymentModel.equalsIgnoreCase("RTF")) {
+        deployRTF( groupId,  artifactId,  version,  targetEnvironment, workers, workerSize,  usr,  pwd,  settingsFile)
+    } else if (deploymentModel.equalsIgnoreCase("Standalone")) {
+ 	    sh "${MVN} dependency:copy -Dartifact=" + groupId + ":" + artifactId + ":" + version + ":jar:mule-application -DoutputDirectory=./ -B -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
+        deployStandalone( groupId,  artifactId,  version,  targetEnvironment,  usr,  pwd,  settingsFile)
+    } else {
+        error('Unknown deployment Model: ' + deploymentModel)
+	}	
+}
+
+pipeline {
+agent  any
+ 
+    parameters {
+      string (name: 'groupId', defaultValue: '50228d0d-2c1f-4548-9c8a-90c0ebb480b3', trim: true, description: 'The Anypoint groupId (is required).')
+      string (name: 'applicationName', defaultValue: 'peter-dunworth-testing', trim: true, description: 'The Git repository name (is required).')
+      choice (name: 'targetEnvironment', choices: ['dev', 'test', 'prd'], description: 'Deploy to environment')
+      choice (name: 'deploymentType', choices: ['CloudHub public-lb', 'CloudHub dlb', 'RTF', 'Standalone'], description: 'Type of deployment')
+      choice (name: 'workers', choices: ['1', '2', '3', '4', '5', '6', '7', '8'], description: 'Number of workers or instances')
+      choice (name: 'workerSize', choices: ['MICRO', 'SMALL', 'MEDIUM', 'LARGE', 'XLARGE', 'XXLARGE', '4XLARGE'], description: 'Type of deployment')
+      string (name: 'muleSettings', defaultValue: '/opt/maven/settings/np-settings.xml', trim: true, description: 'The settings.xml file to use for deployments (is required).')
+      string (name: 'gitURLprefix', defaultValue: 'git@github.com:mulesoft-consulting', trim: true, description: 'The Git url prefix used to checkout source code (is required).')
+    }
+
+    environment {
+        ANYPOINT = credentials('ANYPOINT_PLATFORM_CREDENTIALS')
+        MULE_SETTINGS = '/opt/maven/settings/np-settings.xml'
+        MVN = 'mvn'
+        GIT = 'git'
+        RENAME = 'mv'
+    }
+
+
+stages {
+stage('Choose Version') {
+    steps {
+
+		echo "checkout changelog"
+		echo "Repo: git@github.com:mulesoft-consulting/${applicationName}"
+
+		checkout changelog: false, poll: false, scm: [$class: 'GitSCM', 
+                             branches: [[name: 'release']], 
+                             doGenerateSubmoduleConfigurations: false, extensions: [[$class: 'WipeWorkspace']],
+                             submoduleCfg: [],
+                             gitTool: 'Default',
+                             userRemoteConfigs: [[credentialsId: 'GitCredentials', url: '${gitURLprefix}/${applicationName}.git']]]
+
+		script {
+            tags = sh(script: "${GIT} tag --sort=v:refname | tail -5 ", returnStdout: true).trim()
+            def tag_response = input message: 'Select the version', parameters: [choice(choices: "${tags}",  description: 'version', name: '')]
+            env.tag_response = tag_response
+		}
+	}
+}
+
+
+
+stage ('Deploy') {
+    steps {
+        script {
+          dir ("deploy") {
+        	deploy("${groupId}", "${applicationName}", tag_response, "${targetEnvironment}", "${deploymentType}", "${workers}", "${workerSize}", "${ANYPOINT_USR}", "${ANYPOINT_PSW}", "${muleSettings}")
+          }
+        }
+}}
+
+}
+
+}
