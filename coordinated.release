@@ -67,15 +67,15 @@ def deploy(String groupId, String artifactId, String version, String targetEnvir
 	
 	if (deploymentModel.equalsIgnoreCase("CloudHub public-lb")) {
  	    sh "${MVN} dependency:copy -Dartifact=" + groupId + ":" + artifactId + ":" + version + ":jar:mule-application -DoutputDirectory=./ -B -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
-        deployCloudHub( groupId,  artifactId,  version,  targetEnvironment,  'public-lb', workers, workerSize,  usr,  pwd,  settingsFile)
+            deployCloudHub( groupId,  artifactId,  version,  targetEnvironment,  'public-lb', workers, workerSize,  usr,  pwd,  settingsFile)
     } else if (deploymentModel.equalsIgnoreCase("CloudHub dlb")) {
  	    sh "${MVN} dependency:copy -Dartifact=" + groupId + ":" + artifactId + ":" + version + ":jar:mule-application -DoutputDirectory=./ -B -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
-        deployCloudHub( groupId,  artifactId,  version,  targetEnvironment,  'dlb', workers, workerSize,  usr,  pwd,  settingsFile)
+            deployCloudHub( groupId,  artifactId,  version,  targetEnvironment,  'dlb', workers, workerSize,  usr,  pwd,  settingsFile)
     } else if (deploymentModel.equalsIgnoreCase("RTF")) {
         deployRTF( groupId,  artifactId,  version,  targetEnvironment, workers, workerSize,  usr,  pwd,  settingsFile)
     } else if (deploymentModel.equalsIgnoreCase("Standalone")) {
  	    sh "${MVN} dependency:copy -Dartifact=" + groupId + ":" + artifactId + ":" + version + ":jar:mule-application -DoutputDirectory=./ -B -Du=" + usr + " -Dp=" + pwd + " -s " + settingsFile
-        deployStandalone( groupId,  artifactId,  version,  targetEnvironment,  usr,  pwd,  settingsFile)
+            deployStandalone( groupId,  artifactId,  version,  targetEnvironment,  usr,  pwd,  settingsFile)
     } else {
         error('Unknown deployment Model: ' + deploymentModel)
 	}	
